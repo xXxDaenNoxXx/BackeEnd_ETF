@@ -1,0 +1,44 @@
+spring:
+  application:
+    name: batch-service
+  config:
+    # Configuracion centralizada: tasas de interes, umbrales de calidad, reintentos (ver config-server/config-repo)
+    import: "configserver:${CONFIG_SERVER_URL:http://localhost:8888}"
+  cloud:
+    config:
+      fail-fast: true
+      retry:
+        initial-interval: 2000
+        max-attempts: 15
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/batch_db}
+    username: ${DB_USER:banco}
+    password: ${DB_PASSWORD:banco123}
+  batch:
+    job:
+      enabled: false              # los jobs NO se lanzan solos al arrancar: los lanza el scheduler o la API
+    jdbc:
+      initialize-schema: always   # tablas de metadatos de Spring Batch (JobRepository) en PostgreSQL
+      isolation-level-for-create: read_committed   # evita fallos de serializacion en Postgres con steps paralelos
+  sql:
+    init:
+      mode: always
+      schema-locations: classpath:schema-negocio.sql
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          jwk-set-uri: ${AUTH_JWKS_URI:http://localhost:9000/oauth2/jwks}
+
+server:
+  port: 8104
+
+eureka:
+  client:
+    service-url:
+      defaultZone: ${EUREKA_URL:http://localhost:8761/eureka}
+  instance:
+    prefer-ip-address: true
+
+batch:
+  output-dir: ${BATCH_OUTPUT_DIR:./output}

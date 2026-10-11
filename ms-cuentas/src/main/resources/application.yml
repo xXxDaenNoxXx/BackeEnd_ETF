@@ -1,0 +1,53 @@
+spring:
+  application:
+    name: ms-cuentas
+  config:
+    import: "configserver:${CONFIG_SERVER_URL:http://localhost:8888}"
+  cloud:
+    config:
+      fail-fast: true
+      retry:
+        initial-interval: 2000
+        max-attempts: 15
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/cuentas_db}
+    username: ${DB_USER:banco}
+    password: ${DB_PASSWORD:banco123}
+  jpa:
+    hibernate:
+      ddl-auto: update
+    open-in-view: false
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    consumer:
+      group-id: ms-cuentas
+      auto-offset-reset: earliest
+  security:
+    oauth2:
+      # 1) Resource Server: valida los JWT que llegan (admin-client, ms-pagos-service...)
+      resourceserver:
+        jwt:
+          jwk-set-uri: ${AUTH_JWKS_URI:http://localhost:9000/oauth2/jwks}
+      # 2) Cliente OAuth2: ms-cuentas pide su propio token (client_credentials) para llamar a ms-clientes
+      client:
+        provider:
+          authserver:
+            token-uri: ${AUTH_TOKEN_URI:http://localhost:9000/oauth2/token}
+        registration:
+          downstream:
+            provider: authserver
+            client-id: ms-cuentas-service
+            client-secret: ${MS_CUENTAS_SERVICE_SECRET:cuentassvc123}
+            authorization-grant-type: client_credentials
+            client-authentication-method: client_secret_basic
+            scope: clientes.read
+
+server:
+  port: 8102
+
+eureka:
+  client:
+    service-url:
+      defaultZone: ${EUREKA_URL:http://localhost:8761/eureka}
+  instance:
+    prefer-ip-address: true
