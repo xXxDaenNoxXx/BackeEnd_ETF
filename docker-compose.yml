@@ -1,0 +1,327 @@
+# =====================================================================
+# Banco XYZ - Evaluacion Final Transversal (Semana 9)
+# Toda la plataforma con un solo comando:   docker compose up -d --build
+#
+#   Infraestructura : postgres (4 bases), zookeeper, kafka, kafka-ui
+#   Spring Cloud    : config-server :8888, eureka-server :8761, api-gateway :8080
+#   Seguridad       : auth-server :9000 (OAuth2.0, emite JWT)
+#   Core / canales  : ms-core-banco :8090, bff-cajeros :8094, bff-web :8091, bff-movil :8092 (HTTPS)
+#   Microservicios  : ms-clientes, ms-cuentas, ms-pagos  (ESCALAN HORIZONTALMENTE, sin puerto fijo)
+#   Batch           : batch-service :8104 (Spring Batch)
+#
+# Escalado horizontal:  MS_REPLICAS=3 docker compose up -d   |   docker compose up -d --scale ms-pagos=4
+# Equipos pequenos (<8 GB RAM):  MS_REPLICAS=1 docker compose up -d
+# Dentro de la red de Docker los servicios se hablan por NOMBRE (kafka:29092, auth-server:9000, ...).
+# =====================================================================
+
+x-microservicio: &microservicio
+  restart: unless-stopped
+  mem_limit: 512m
+  depends_on: &dependencias
+    config-server:
+      condition: service_healthy
+    eureka-server:
+      condition: service_healthy
+    postgres:
+      condition: service_healthy
+    kafka:
+      condition: service_healthy
+    auth-server:
+      condition: service_started
+
+x-entorno-comun: &entorno-comun
+  CONFIG_SERVER_URL: http://config-server:8888
+  EUREKA_URL: http://eureka-server:8761/eureka
+  KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+  AUTH_JWKS_URI: http://auth-server:9000/oauth2/jwks
+  AUTH_TOKEN_URI: http://auth-server:9000/oauth2/token
+  DB_USER: banco
+  DB_PASSWORD: ${POSTGRES_PASSWORD:-banco123}
+
+services:
+
+  # ---------------- Base de datos (una BD por microservicio) ----------------
+  postgres:
+    build: ./docker/postgres
+    image: dericesn/banco-postgres:latest
+    container_name: postgres
+    environment:
+      POSTGRES_USER: banco
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-banco123}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U banco -d postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    mem_limit: 384m
+    restart: unless-stopped
+
+  # ---------------- Mensajeria (Kafka) ----------------
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.6.0
+    container_name: zookeeper
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    mem_limit: 384m
+    restart: unless-stopped
+
+  kafka:
+    image: confluentinc/cp-kafka:7.6.0
+    container_name: kafka
+    depends_on:
+      - zookeeper
+    ports:
+      - "9092:9092"   # acceso desde tu maquina (herramientas externas)
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:29092,PLAINTEXT_HOST://0.0.0.0:9092
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_HEAP_OPTS: "-Xmx512m -Xms256m"
+    healthcheck:
+      test: ["CMD", "kafka-topics", "--bootstrap-server", "kafka:29092", "--list"]
+      interval: 10s
+      timeout: 10s
+      retries: 12
+      start_period: 20s
+    mem_limit: 768m
+    restart: unless-stopped
+
+  kafka-ui:
+    image: provectuslabs/kafka-ui:latest
+    container_name: kafka-ui
+    depends_on:
+      kafka:
+        condition: service_healthy
+    ports:
+      - "8085:8080"
+    environment:
+      KAFKA_CLUSTERS_0_NAME: local
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:29092
+    mem_limit: 384m
+    restart: unless-stopped
+
+  # ---------------- Spring Cloud: configuracion, descubrimiento, gateway ----------------
+  config-server:
+    build: ./config-server
+    image: dericesn/config-server:latest
+    container_name: config-server
+    ports:
+      - "8888:8888"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8888/actuator/health | grep -q UP"]
+      interval: 10s
+      timeout: 5s
+      retries: 15
+      start_period: 25s
+    mem_limit: 384m
+    restart: unless-stopped
+
+  eureka-server:
+    build: ./eureka-server
+    image: dericesn/eureka-server:latest
+    container_name: eureka-server
+    ports:
+      - "8761:8761"   # panel de Eureka: instancias registradas
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8761/actuator/health | grep -q UP"]
+      interval: 10s
+      timeout: 5s
+      retries: 15
+      start_period: 25s
+    mem_limit: 384m
+    restart: unless-stopped
+
+  api-gateway:
+    build: ./api-gateway
+    image: dericesn/api-gateway:latest
+    container_name: api-gateway
+    depends_on:
+      eureka-server:
+        condition: service_healthy
+    ports:
+      - "8080:8080"   # UNICA puerta de entrada a ms-clientes / ms-cuentas / ms-pagos / batch-service
+    environment:
+      EUREKA_URL: http://eureka-server:8761/eureka
+    mem_limit: 384m
+    restart: unless-stopped
+
+  # ---------------- Seguridad (OAuth2.0) ----------------
+  auth-server:
+    build: ./auth-server
+    image: dericesn/auth-server:latest
+    container_name: auth-server
+    ports:
+      - "9000:9000"
+    environment:
+      CAJERO_CLIENT_SECRET: ${CAJERO_CLIENT_SECRET:-cajero123}
+      WEB_CLIENT_SECRET: ${WEB_CLIENT_SECRET:-web123}
+      MOVIL_CLIENT_SECRET: ${MOVIL_CLIENT_SECRET:-movil123}
+      BFF_CAJEROS_SERVICE_SECRET: ${BFF_CAJEROS_SERVICE_SECRET:-cajerossvc123}
+      BFF_WEB_SERVICE_SECRET: ${BFF_WEB_SERVICE_SECRET:-websvc123}
+      BFF_MOVIL_SERVICE_SECRET: ${BFF_MOVIL_SERVICE_SECRET:-movilsvc123}
+      ADMIN_CLIENT_SECRET: ${ADMIN_CLIENT_SECRET:-admin123}
+      MS_CUENTAS_SERVICE_SECRET: ${MS_CUENTAS_SERVICE_SECRET:-cuentassvc123}
+      MS_PAGOS_SERVICE_SECRET: ${MS_PAGOS_SERVICE_SECRET:-pagossvc123}
+    mem_limit: 384m
+    restart: unless-stopped
+
+  # ---------------- Core legacy-data + BFF por canal ----------------
+  ms-core-banco:
+    build: ./banco
+    image: dericesn/ms-core-banco:latest
+    container_name: ms-core-banco
+    depends_on:
+      kafka:
+        condition: service_healthy
+      auth-server:
+        condition: service_started
+    ports:
+      - "8090:8090"   # expuesto SOLO para demostrar que sin token responde 401
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      AUTH_JWKS_URI: http://auth-server:9000/oauth2/jwks
+    mem_limit: 512m
+    restart: unless-stopped
+
+  bff-cajeros:
+    build: ./banco_cajero/banco
+    image: dericesn/bff-cajeros:latest
+    container_name: bff-cajeros
+    depends_on:
+      kafka:
+        condition: service_healthy
+      auth-server:
+        condition: service_started
+      ms-core-banco:
+        condition: service_started
+    ports:
+      - "8094:8094"   # HTTPS - canal cajeros automaticos (retiros y saldo)
+    environment:
+      CORE_BASE_URL: http://ms-core-banco:8090
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      AUTH_JWKS_URI: http://auth-server:9000/oauth2/jwks
+      AUTH_TOKEN_URI: http://auth-server:9000/oauth2/token
+      BFF_CAJEROS_SERVICE_SECRET: ${BFF_CAJEROS_SERVICE_SECRET:-cajerossvc123}
+    mem_limit: 512m
+    restart: unless-stopped
+
+  bff-web:
+    build: ./banco_web/banco
+    image: dericesn/bff-web:latest
+    container_name: bff-web
+    depends_on:
+      auth-server:
+        condition: service_started
+      ms-core-banco:
+        condition: service_started
+    ports:
+      - "8091:8091"   # HTTPS - canal web (datos completos)
+    environment:
+      CORE_BASE_URL: http://ms-core-banco:8090
+      AUTH_JWKS_URI: http://auth-server:9000/oauth2/jwks
+      AUTH_TOKEN_URI: http://auth-server:9000/oauth2/token
+      BFF_WEB_SERVICE_SECRET: ${BFF_WEB_SERVICE_SECRET:-websvc123}
+    mem_limit: 512m
+    restart: unless-stopped
+
+  bff-movil:
+    build: ./banco_movil/banco
+    image: dericesn/bff-movil:latest
+    container_name: bff-movil
+    depends_on:
+      auth-server:
+        condition: service_started
+      ms-core-banco:
+        condition: service_started
+    ports:
+      - "8092:8092"   # HTTPS - canal movil (respuestas ligeras)
+    environment:
+      CORE_BASE_URL: http://ms-core-banco:8090
+      AUTH_JWKS_URI: http://auth-server:9000/oauth2/jwks
+      AUTH_TOKEN_URI: http://auth-server:9000/oauth2/token
+      BFF_MOVIL_SERVICE_SECRET: ${BFF_MOVIL_SERVICE_SECRET:-movilsvc123}
+    mem_limit: 512m
+    restart: unless-stopped
+
+  # ---------------- Microservicios de negocio (escalables) ----------------
+  ms-clientes:
+    <<: *microservicio
+    build: ./ms-clientes
+    image: dericesn/ms-clientes:latest
+    deploy:
+      replicas: ${MS_REPLICAS:-2}
+    environment:
+      <<: *entorno-comun
+      DB_URL: jdbc:postgresql://postgres:5432/clientes_db
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8101/actuator/health | grep -q UP"]
+      interval: 15s
+      timeout: 5s
+      retries: 12
+      start_period: 60s
+
+  ms-cuentas:
+    <<: *microservicio
+    build: ./ms-cuentas
+    image: dericesn/ms-cuentas:latest
+    deploy:
+      replicas: ${MS_REPLICAS:-2}
+    environment:
+      <<: *entorno-comun
+      DB_URL: jdbc:postgresql://postgres:5432/cuentas_db
+      MS_CUENTAS_SERVICE_SECRET: ${MS_CUENTAS_SERVICE_SECRET:-cuentassvc123}
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8102/actuator/health | grep -q UP"]
+      interval: 15s
+      timeout: 5s
+      retries: 12
+      start_period: 60s
+
+  ms-pagos:
+    <<: *microservicio
+    build: ./ms-pagos
+    image: dericesn/ms-pagos:latest
+    deploy:
+      replicas: ${MS_REPLICAS:-2}
+    environment:
+      <<: *entorno-comun
+      DB_URL: jdbc:postgresql://postgres:5432/pagos_db
+      MS_PAGOS_SERVICE_SECRET: ${MS_PAGOS_SERVICE_SECRET:-pagossvc123}
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8103/actuator/health | grep -q UP"]
+      interval: 15s
+      timeout: 5s
+      retries: 12
+      start_period: 60s
+
+  # ---------------- Batch (Spring Batch) ----------------
+  batch-service:
+    <<: *microservicio
+    build: ./batch-service
+    image: dericesn/batch-service:latest
+    container_name: batch-service
+    ports:
+      - "8104:8104"
+    environment:
+      <<: *entorno-comun
+      DB_URL: jdbc:postgresql://postgres:5432/batch_db
+      BATCH_OUTPUT_DIR: /data/output
+    volumes:
+      - batch-output:/data/output
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8104/actuator/health | grep -q UP"]
+      interval: 15s
+      timeout: 5s
+      retries: 12
+      start_period: 60s
+
+volumes:
+  postgres-data:
+  batch-output:

@@ -1,0 +1,4 @@
+# Parametros de negocio de ms-clientes (cambiables sin reconstruir la imagen)
+clientes:
+  topic-eventos: clientes.eventos
+  topic-alertas: alertas.seguridad

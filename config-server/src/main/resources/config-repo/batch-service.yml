@@ -1,0 +1,17 @@
+batch:
+  # Tasas de interes MENSUALES (tasa anual / 12). Se cambian aqui, sin tocar el codigo.
+  interes:
+    ahorro: 0.0025      # 3,0% anual  -> interes a favor del cliente
+    prestamo: 0.0150    # 18,0% anual -> interes cobrado
+    hipoteca: 0.0050    # 6,0% anual  -> interes cobrado
+  chunk-size: 100
+  # Umbral de calidad: si los registros rechazados superan este numero el job FALLA (y queda reejecutable)
+  skip-limit: 900
+  retry-limit: 3
+  threads: 4
+  partitions: 4
+  # Reejecucion automatica de jobs FAILED
+  restart:
+    enabled: true
+    interval-ms: 60000
+    max-restarts: 3

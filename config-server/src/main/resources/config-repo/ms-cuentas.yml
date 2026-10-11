@@ -1,0 +1,28 @@
+cuentas:
+  topic-eventos: cuentas.eventos
+  topic-transacciones: transacciones.completadas
+  grupo-consumidor: ms-cuentas
+
+# ---- Resilience4j: llamadas de ms-cuentas hacia ms-clientes (validar que el cliente existe) ----
+resilience4j:
+  circuitbreaker:
+    instances:
+      msClientes:
+        sliding-window-size: 6
+        minimum-number-of-calls: 4
+        failure-rate-threshold: 50
+        wait-duration-in-open-state: 10s
+        permitted-number-of-calls-in-half-open-state: 2
+        # 4xx = error de negocio (cliente no existe), NO cuenta como caida del servicio
+        ignore-exceptions:
+          - org.springframework.web.client.HttpClientErrorException
+  retry:
+    instances:
+      msClientes:
+        max-attempts: 3
+        wait-duration: 300ms
+        enable-exponential-backoff: true
+        exponential-backoff-multiplier: 2
+        ignore-exceptions:
+          - org.springframework.web.client.HttpClientErrorException
+          - io.github.resilience4j.circuitbreaker.CallNotPermittedException

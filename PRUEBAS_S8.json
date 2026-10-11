@@ -1,0 +1,406 @@
+{
+  "info": {
+    "name": "Banco XYZ - Semana 8 (OAuth2.0 + Docker)",
+    "description": "Ejecutar primero la carpeta 1 (tokens). Desactivar 'SSL certificate verification' en Postman (bff-cajeros usa certificado autofirmado).",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "cuentaId",
+      "value": "101"
+    },
+    {
+      "key": "auth",
+      "value": "http://localhost:9000"
+    },
+    {
+      "key": "core",
+      "value": "http://localhost:8090"
+    },
+    {
+      "key": "cajero",
+      "value": "https://localhost:8094"
+    },
+    {
+      "key": "token_cajero",
+      "value": ""
+    },
+    {
+      "key": "token_web",
+      "value": ""
+    }
+  ],
+  "item": [
+    {
+      "name": "1. auth-server: obtener tokens (client_credentials)",
+      "item": [
+        {
+          "name": "Token cajero (cajero.read cajero.write)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 y access_token', function(){pm.response.to.have.status(200);});",
+                  "pm.collectionVariables.set('token_cajero', pm.response.json().access_token);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/x-www-form-urlencoded"
+              }
+            ],
+            "auth": {
+              "type": "basic",
+              "basic": [
+                {
+                  "key": "username",
+                  "value": "cajero-client",
+                  "type": "string"
+                },
+                {
+                  "key": "password",
+                  "value": "cajero123",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                {
+                  "key": "grant_type",
+                  "value": "client_credentials"
+                },
+                {
+                  "key": "scope",
+                  "value": "cajero.read cajero.write"
+                }
+              ]
+            },
+            "url": "{{auth}}/oauth2/token"
+          }
+        },
+        {
+          "name": "Token web (web.read) - para probar 403",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 y access_token', function(){pm.response.to.have.status(200);});",
+                  "pm.collectionVariables.set('token_web', pm.response.json().access_token);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/x-www-form-urlencoded"
+              }
+            ],
+            "auth": {
+              "type": "basic",
+              "basic": [
+                {
+                  "key": "username",
+                  "value": "web-client",
+                  "type": "string"
+                },
+                {
+                  "key": "password",
+                  "value": "web123",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                {
+                  "key": "grant_type",
+                  "value": "client_credentials"
+                },
+                {
+                  "key": "scope",
+                  "value": "web.read"
+                }
+              ]
+            },
+            "url": "{{auth}}/oauth2/token"
+          }
+        },
+        {
+          "name": "Token con credenciales invalidas (esperado 401)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('401', function(){pm.response.to.have.status(401);});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "auth": {
+              "type": "basic",
+              "basic": [
+                {
+                  "key": "username",
+                  "value": "cajero-client",
+                  "type": "string"
+                },
+                {
+                  "key": "password",
+                  "value": "incorrecta",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                {
+                  "key": "grant_type",
+                  "value": "client_credentials"
+                }
+              ]
+            },
+            "url": "{{auth}}/oauth2/token"
+          }
+        }
+      ]
+    },
+    {
+      "name": "2. bff-cajeros (protegido con OAuth2)",
+      "item": [
+        {
+          "name": "Saldo con token cajero (esperado 200)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{cajero}}/cajero/cuentas/{{cuentaId}}/saldo",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_cajero}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('esperado 200', function(){pm.response.to.have.status(200);});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Retiro exitoso (esperado 200)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{cajero}}/cajero/cuentas/{{cuentaId}}/retiro",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_cajero}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"monto\": 1000}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('esperado 200', function(){pm.response.to.have.status(200);});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Retiro saldo insuficiente (esperado 400)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{cajero}}/cajero/cuentas/{{cuentaId}}/retiro",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_cajero}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"monto\": 999999999}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('esperado 400', function(){pm.response.to.have.status(400);});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Saldo SIN token (esperado 401)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{cajero}}/cajero/cuentas/{{cuentaId}}/saldo",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('esperado 401', function(){pm.response.to.have.status(401);});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Saldo con token WEB - scope insuficiente (esperado 403)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{cajero}}/cajero/cuentas/{{cuentaId}}/saldo",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_web}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('esperado 403', function(){pm.response.to.have.status(403);});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "3. ms-core-banco directo (protegido)",
+      "item": [
+        {
+          "name": "Core SIN token (esperado 401)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{core}}/core/cuentas",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('esperado 401', function(){pm.response.to.have.status(401);});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Core con token de CANAL cajero - sin scope core.* (esperado 403)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{core}}/core/cuentas",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_cajero}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('esperado 403', function(){pm.response.to.have.status(403);});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

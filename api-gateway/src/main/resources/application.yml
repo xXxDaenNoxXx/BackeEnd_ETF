@@ -1,0 +1,42 @@
+spring:
+  application:
+    name: api-gateway
+  cloud:
+    gateway:
+      routes:
+        - id: ms-clientes
+          uri: lb://ms-clientes
+          predicates:
+            - Path=/clientes/**
+        - id: ms-cuentas
+          uri: lb://ms-cuentas
+          predicates:
+            - Path=/cuentas/**
+        - id: ms-pagos
+          uri: lb://ms-pagos
+          predicates:
+            - Path=/pagos/**
+        - id: batch-service
+          uri: lb://batch-service
+          predicates:
+            - Path=/batch/**
+      default-filters:
+        # Reintenta (solo GET, idempotente) si una instancia acaba de caerse y Eureka aun no lo sabe
+        - name: Retry
+          args:
+            retries: 2
+            methods: GET
+            statuses: BAD_GATEWAY, SERVICE_UNAVAILABLE
+server:
+  port: 8080
+eureka:
+  client:
+    service-url:
+      defaultZone: ${EUREKA_URL:http://localhost:8761/eureka}
+  instance:
+    prefer-ip-address: true
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,gateway

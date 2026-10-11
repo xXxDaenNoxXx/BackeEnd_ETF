@@ -1,0 +1,17 @@
+# Configuracion COMPARTIDA por todos los microservicios (se sirve a todas las aplicaciones)
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,circuitbreakers,retries
+  endpoint:
+    health:
+      probes:
+        enabled: true
+  health:
+    circuitbreakers:
+      enabled: true
+logging:
+  level:
+    root: INFO
+    cl.banco: INFO
