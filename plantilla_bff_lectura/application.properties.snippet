@@ -1,0 +1,15 @@
+core.base-url=${CORE_BASE_URL:http://localhost:8090}
+
+auth.jwks-uri=${AUTH_JWKS_URI:http://localhost:9000/oauth2/jwks}
+auth.token-uri=${AUTH_TOKEN_URI:http://localhost:9000/oauth2/token}
+spring.security.oauth2.resourceserver.jwt.jwk-set-uri=${auth.jwks-uri}
+
+spring.security.oauth2.client.provider.authserver.token-uri=${auth.token-uri}
+spring.security.oauth2.client.registration.core.provider=authserver
+# bff-web  -> client-id=bff-web-service   / secreto BFF_WEB_SERVICE_SECRET   (default websvc123)
+# bff-movil-> client-id=bff-movil-service / secreto BFF_MOVIL_SERVICE_SECRET (default movilsvc123)
+spring.security.oauth2.client.registration.core.client-id=bff-web-service
+spring.security.oauth2.client.registration.core.client-secret=${BFF_WEB_SERVICE_SECRET:websvc123}
+spring.security.oauth2.client.registration.core.authorization-grant-type=client_credentials
+spring.security.oauth2.client.registration.core.client-authentication-method=client_secret_basic
+spring.security.oauth2.client.registration.core.scope=core.read

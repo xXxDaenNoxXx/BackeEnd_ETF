@@ -1,0 +1,49 @@
+spring:
+  application:
+    name: ms-pagos
+  config:
+    import: "configserver:${CONFIG_SERVER_URL:http://localhost:8888}"
+  cloud:
+    config:
+      fail-fast: true
+      retry:
+        initial-interval: 2000
+        max-attempts: 15
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/pagos_db}
+    username: ${DB_USER:banco}
+    password: ${DB_PASSWORD:banco123}
+  jpa:
+    hibernate:
+      ddl-auto: update
+    open-in-view: false
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          jwk-set-uri: ${AUTH_JWKS_URI:http://localhost:9000/oauth2/jwks}
+      # ms-pagos pide su propio token (client_credentials) para llamar a ms-cuentas
+      client:
+        provider:
+          authserver:
+            token-uri: ${AUTH_TOKEN_URI:http://localhost:9000/oauth2/token}
+        registration:
+          downstream:
+            provider: authserver
+            client-id: ms-pagos-service
+            client-secret: ${MS_PAGOS_SERVICE_SECRET:pagossvc123}
+            authorization-grant-type: client_credentials
+            client-authentication-method: client_secret_basic
+            scope: cuentas.read,cuentas.write
+
+server:
+  port: 8103
+
+eureka:
+  client:
+    service-url:
+      defaultZone: ${EUREKA_URL:http://localhost:8761/eureka}
+  instance:
+    prefer-ip-address: true

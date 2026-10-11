@@ -1,0 +1,21 @@
+spring:
+  application:
+    name: eureka-server
+server:
+  port: 8761
+eureka:
+  instance:
+    hostname: ${EUREKA_HOSTNAME:localhost}
+  client:
+    # Este es el servidor: no se registra en si mismo ni descarga el registro
+    register-with-eureka: false
+    fetch-registry: false
+  server:
+    # Entorno de desarrollo/demo: no desalojar instancias ante picos de caida de heartbeats
+    enable-self-preservation: false
+    eviction-interval-timer-in-ms: 5000
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
